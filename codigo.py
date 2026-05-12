@@ -415,75 +415,73 @@ if solucao_admissivel:
 else:
     print("\nA solução obtida NÃO é admissível.")
 
-print("\nFIM DO PROGRAMA")
 
 
-# Alínea c) — Solução vizinha por swap entre PL1 e PL4
+# ============================================================
+# Alínea c) — Solução vizinha por substituição na PL4
+# ============================================================
 
-import copy
+print("\n===== ALÍNEA C — SOLUÇÃO VIZINHA =====")
 
-# Trabalhar com cópias para não alterar a solução original
-PL1_viz = PL1.copy()
-PL4_viz = PL4.copy()
+# Música removida da PL4
+musica_removida = PL4[-1]
+
+# IDs já usados na solução original
+ids_usados = set(
+    [m["track_id"] for m in PL1] +
+    [m["track_id"] for m in PL2] +
+    [m["track_id"] for m in PL3] +
+    [m["track_id"] for m in PL4]
+)
+
+# Procurar músicas ainda não usadas
+candidatas = df_unique[
+    ~df_unique["track_id"].isin(ids_usados)
+].copy()
 
 found = False
 
-for i, m1 in enumerate(PL1):
-    for j, m4 in enumerate(PL4):
+for _, musica_nova in candidatas.sort_values("popularity", ascending=False).iterrows():
 
-        # Testar o swap: m1 vai para PL4, m4 vai para PL1
-        PL1_teste = PL1.copy()
-        PL4_teste = PL4.copy()
-        PL1_teste[i] = m4
-        PL4_teste[j] = m1
+    PL4_viz = PL4.copy()
+    PL4_viz[-1] = musica_nova
 
-        # --- Verificar PL1 ---
-        D1_new = sum(m["duration_min"] for m in PL1_teste)
-        instr_ok = all(m["instrumentalness"] >= 0.66 for m in PL1_teste)
-        dur1_ok  = 32 <= D1_new <= 35
+    D4_viz = sum(m["duration_min"] for m in PL4_viz)
+    V4_viz = sum(m["valence"] for m in PL4_viz)
+    P4_viz = sum(m["popularity"] for m in PL4_viz)
 
-        # --- Verificar PL4 ---
-        D4_new = sum(m["duration_min"] for m in PL4_teste)
-        V4_new = sum(m["valence"]      for m in PL4_teste)
-        dur4_ok     = 32 <= D4_new <= 35
-        valence_ok  = V4_new >= 7.0
-
-        if instr_ok and dur1_ok and dur4_ok and valence_ok:
-            PL1_viz = PL1_teste
-            PL4_viz = PL4_teste
-            musica_saiu_PL1 = m1
-            musica_saiu_PL4 = m4
-            found = True
-            break
-
-    if found:
+    if 32 <= D4_viz <= 35 and V4_viz >= 7:
+        found = True
         break
 
-# --- Resultados ---
 if found:
-    print("=== SOLUÇÃO VIZINHA (swap PL1 ↔ PL4) ===")
-    print(f"\nMovimento: '{musica_saiu_PL1['track_name']}' (saiu de PL1) "
-          f"↔ '{musica_saiu_PL4['track_name']}' (saiu de PL4)")
+    print("Estrutura de vizinhança: substituição de uma música por outra música não usada.")
+    print("\nPlaylist alterada: PL4")
 
-    print("\n--- PL1 após swap ---")
-    print(f"  Duração : {sum(m['duration_min'] for m in PL1_viz):.2f} min")
-    print(f"  Popularidade : {sum(m['popularity'] for m in PL1_viz)}")
-    print(f"  Min instrumentalness: {min(m['instrumentalness'] for m in PL1_viz):.3f}")
+    print("\nMúsica removida:")
+    print(musica_removida["track_name"], "-", musica_removida["artists"])
+    print("Duração:", round(musica_removida["duration_min"], 2))
+    print("Valence:", round(musica_removida["valence"], 3))
+    print("Popularidade:", musica_removida["popularity"])
 
-    print("\n--- PL4 após swap ---")
-    print(f"  Duração  : {sum(m['duration_min'] for m in PL4_viz):.2f} min")
-    print(f"  Popularidade : {sum(m['popularity'] for m in PL4_viz)}")
-    print(f"  Valence total: {sum(m['valence'] for m in PL4_viz):.3f}")
+    print("\nMúsica adicionada:")
+    print(musica_nova["track_name"], "-", musica_nova["artists"])
+    print("Duração:", round(musica_nova["duration_min"], 2))
+    print("Valence:", round(musica_nova["valence"], 3))
+    print("Popularidade:", musica_nova["popularity"])
 
-    P_original = P1 + P2 + P3 + P4
-    P_vizinha  = (sum(m['popularity'] for m in PL1_viz) + P2 + P3 +
-                  sum(m['popularity'] for m in PL4_viz))
-    print(f"\nPopularidade total original : {P_original}")
-    print(f"Popularidade total vizinha  : {P_vizinha}")
-    print(f"Variação: {P_vizinha - P_original:+d}")
+    print("\nPL4 original:")
+    print("Duração:", round(D4, 2))
+    print("Valence:", round(V4, 2))
+    print("Popularidade:", P4)
 
-    # Movimento a registar na Lista Tabu (para d))
-    print(f"\nMovimento para Lista Tabu: "
-          f"({musica_saiu_PL1['track_id']}, {musica_saiu_PL4['track_id']})")
+    print("\nPL4 vizinha:")
+    print("Duração:", round(D4_viz, 2))
+    print("Valence:", round(V4_viz, 2))
+    print("Popularidade:", P4_viz)
+
+    print("\nPopularidade total original:", P1 + P2 + P3 + P4)
+    print("Popularidade total vizinha:", P1 + P2 + P3 + P4_viz)
+
 else:
-    print("Nenhum swap admissível encontrado entre PL1 e PL4.")
+    print("Nenhuma solução vizinha admissível encontrada para PL4.")
