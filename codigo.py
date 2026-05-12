@@ -4,76 +4,324 @@ Data Exploration
 """
 
 import pandas as pd
+# ============================================================
+# 1. LEITURA E PREPARAÇÃO DO DATASET
+# ============================================================
 
-# Carregar o dataset
-df = pd.read_csv('dataset_playlist.csv')
+df = pd.read_csv("dataset_playlist.csv")
+df.columns = df.columns.str.strip()
 
-# The dataset has duplicate track_ids (same song in multiple genres).
-# We deduplicate by track_id to get a clean pool of unique songs.
-df_unique = df.drop_duplicates(subset='track_id').copy()
-df_unique['duration_min'] = df_unique['duration_ms'] / 60000
+if "Unnamed: 0" in df.columns:
+    df = df.drop(columns=["Unnamed: 0"])
 
-print("Informações sobre o Dataset")
-print(f"Total de linhas (com duplicados): {len(df)}")
-print(f"Musicas unicas (por track_id):   {len(df_unique)}")
-print(f"Colunas: {df.columns.tolist()}")
-print(f"\nValores ausentes:\n{df.isnull().sum()[df.isnull().sum() > 0]}")
+# Remover músicas duplicadas pelo track_id
+df = df.drop_duplicates(subset="track_id").copy()
 
-print("\nEstatísticas descritivas (músicas únicas):")
-cols = ['popularity', 'duration_min', 'instrumentalness',
-        'danceability', 'tempo', 'acousticness', 'liveness', 'valence']
-print(df_unique[cols].describe().round(3))
+# Converter duração para minutos
+df["duration_min"] = df["duration_ms"] / 60000
 
-print("\n" + "=" * 60)
-print("PL1 — instrumentalness >= 0.66")
-print("=" * 60)
-pl1_pool = df_unique[df_unique['instrumentalness'] >= 0.66]
-print(f"Candidate songs : {len(pl1_pool)}")
-print(f"Avg popularity  : {pl1_pool['popularity'].mean():.1f}")
-print(f"Avg duration    : {pl1_pool['duration_min'].mean():.2f} min")
-print(f"Total duration  : {pl1_pool['duration_min'].sum():.1f} min")
+print("Dataset carregado")
+print("Número de músicas únicas:", len(df))
 
-print("\n" + "=" * 60)
-print("PL2 — avg danceability = 0.5, tempo >= 120 BPM per song")
-print("=" * 60)
-pl2_pool = df_unique[df_unique['tempo'] >= 120]
-print(f"Candidate songs (tempo >= 120): {len(pl2_pool)}")
-print(f"Danceability stats:")
-print(pl2_pool['danceability'].describe().round(3))
-# Songs close to danceability 0.5 (good anchors)
-near_05 = pl2_pool[(pl2_pool['danceability'] >= 0.45) & (pl2_pool['danceability'] <= 0.55)]
-print(f"Songs with danceability in [0.45, 0.55]: {len(near_05)}")
+# ============================================================
+# 2. FUNÇÕES AUXILIARES
+# ============================================================
 
-print("\n" + "=" * 60)
-print("PL3 — >= 15 min acoustic genre + >= 4 live songs (liveness > 0.8)")
-print("=" * 60)
-acoustic_pool = df_unique[df_unique['track_genre'] == 'acoustic']
-live_pool = df_unique[df_unique['liveness'] > 0.8]
-overlap = df_unique[(df_unique['track_genre'] == 'acoustic') & (df_unique['liveness'] > 0.8)]
-print(f"Acoustic genre songs : {len(acoustic_pool)}")
-print(f"Live songs           : {len(live_pool)}")
-print(f"Both acoustic + live : {len(overlap)}")
-print(f"Total acoustic duration available: {acoustic_pool['duration_min'].sum():.1f} min")
-print(f"Avg acoustic song duration: {acoustic_pool['duration_min'].mean():.2f} min")
-print(f"Songs needed for 15 min acoustic: ~{15 / acoustic_pool['duration_min'].mean():.0f} songs")
+def duracao_total(playlist):
+    return sum(m["duration_min"] for m in playlist)
 
-print("\n" + "=" * 60)
-print("PL4 — total valence >= 7.0")
-print("=" * 60)
-print(f"Valence range: {df_unique['valence'].min():.3f} – {df_unique['valence'].max():.3f}")
-print(f"Avg valence  : {df_unique['valence'].mean():.3f}")
-print(f"Songs with valence > 0.7 : {len(df_unique[df_unique['valence'] > 0.7])}")
-print(f"Songs with valence > 0.8 : {len(df_unique[df_unique['valence'] > 0.8])}")
-print(f"\nIf playlist has 9 songs → need avg valence >= {7/9:.3f}")
-print(f"If playlist has 10 songs → need avg valence >= {7/10:.3f}")
 
-print("\n" + "=" * 60)
-print("DURATION FEASIBILITY (32–35 min per playlist)")
-print("=" * 60)
-print(f"Avg song duration (all):      {df_unique['duration_min'].mean():.2f} min")
-print(f"Estimated songs per playlist: {32/df_unique['duration_min'].mean():.0f}–{35/df_unique['duration_min'].mean():.0f} songs")
+def popularidade_total(playlist):
+    return sum(m["popularity"] for m in playlist)
 
-print("\n" + "=" * 60)
-print("GENRES AVAILABLE")
-print("=" * 60)
-print(df_unique['track_genre'].value_counts().head(15))
+
+def imprimir_playlist(nome, playlist):
+    print("\n" + "=" * 60)
+    print(nome)
+    print("=" * 60)
+
+    print("Nº músicas:", len(playlist))
+    print("Duração:", round(duracao_total(playlist), 2), "min")
+    print("Popularidade:", popularidade_total(playlist))
+
+    for i, m in enumerate(playlist, 1):
+        print(
+            f"{i}. {m['track_name']} - {m['artists']} "
+            f"| pop={m['popularity']} "
+            f"| dur={m['duration_min']:.2f}"
+        )
+
+
+def analisar_popularidade(nome, playlist):
+    mais_popular = max(playlist, key=lambda m: m["popularity"])
+    menos_popular = min(playlist, key=lambda m: m["popularity"])
+
+    print("\n" + nome)
+    print("Mais popular:")
+    print(f"{mais_popular['track_name']} - {mais_popular['artists']}")
+    print("Popularidade:", mais_popular["popularity"])
+
+    print("Menos popular:")
+    print(f"{menos_popular['track_name']} - {menos_popular['artists']}")
+    print("Popularidade:", menos_popular["popularity"])
+
+    print(
+        "Diferença:",
+        mais_popular["popularity"] - menos_popular["popularity"]
+    )
+
+
+
+# ============================================================
+# 3. INICIALIZAÇÃO
+# ============================================================
+
+M = df.copy()
+
+PL1, PL2, PL3, PL4 = [], [], [], []
+
+D1 = D2 = D3 = D4 = 0
+P1 = P2 = P3 = P4 = 0
+
+# 4. PLAYLISTS
+# ==================================
+# PL1 — INSTRUMENTALNESS >= 0.66
+# ==================================
+
+
+while D1 < 32:
+    admissiveis = M[
+        (M["instrumentalness"] >= 0.66) &
+        (M["duration_min"] + D1 <= 35)
+    ]
+
+    if admissiveis.empty:
+        break
+
+    musica = admissiveis.sort_values("popularity", ascending=False).iloc[0]
+
+    PL1.append(musica)
+    D1 += musica["duration_min"]
+    P1 += musica["popularity"]
+
+    M = M[M["track_id"] != musica["track_id"]]
+
+# ====================================================
+# PL2 – Dance  TEMPO >= 120 E MÉDIA DANCEABILITY ≈ 0.5
+# ====================================================
+
+SOMA_DANCE2 = 0
+DM2 = 0
+
+while D2 < 32:
+    admissiveis = M[
+        (M["tempo"] >= 120) &
+        (M["duration_min"] + D2 <= 35)
+    ].copy()
+
+    if admissiveis.empty:
+        break
+
+    admissiveis["desvio"] = abs(
+        ((SOMA_DANCE2 + admissiveis["danceability"]) / (len(PL2) + 1)) - 0.5
+    )
+
+    musica = admissiveis.sort_values(
+        by=["desvio", "popularity"],
+        ascending=[True, False]
+    ).iloc[0]
+
+    PL2.append(musica)
+    D2 += musica["duration_min"]
+    P2 += musica["popularity"]
+    SOMA_DANCE2 += musica["danceability"]
+    DM2 = SOMA_DANCE2 / len(PL2)
+
+    M = M[M["track_id"] != musica["track_id"]]
+
+# ============================================================
+# PL3 – Acústica / Live PELO MENOS 15 MIN ACÚSTICO + 4 LIVE
+# ===========================================================
+
+A3 = 0
+L3 = 0
+
+while D3 < 35 and (D3 < 32 or A3 < 15 or L3 < 4):
+    admissiveis = M[
+        M["duration_min"] + D3 <= 35
+    ].copy()
+
+    if admissiveis.empty:
+        break
+
+    admissiveis["score"] = admissiveis["popularity"]
+
+    if A3 < 15:
+        admissiveis.loc[
+            admissiveis["acousticness"] >= 0.5, "score"
+        ] += 30
+
+    if L3 < 4:
+        admissiveis.loc[
+            admissiveis["liveness"] >= 0.8, "score"
+        ] += 50
+
+    musica = admissiveis.sort_values(
+        "score",
+        ascending=False
+    ).iloc[0]
+
+    PL3.append(musica)
+    D3 += musica["duration_min"]
+    P3 += musica["popularity"]
+
+    if musica["acousticness"] >= 0.5:
+        A3 += musica["duration_min"]
+
+    if musica["liveness"] >= 0.8:
+        L3 += 1
+
+    M = M[M["track_id"] != musica["track_id"]]
+
+# ===================================================
+# PL4 – Forte componente positiva VALENCE TOTAL >= 7
+# ===================================================
+
+V4 = 0
+
+while D4 < 35 and (D4 < 32 or V4 < 7):
+    admissiveis = M[
+        M["duration_min"] + D4 <= 35
+    ].copy()
+
+    if admissiveis.empty:
+        break
+
+    admissiveis["score"] = admissiveis["popularity"]
+    admissiveis["score"] += admissiveis["valence"] * 20
+
+    musica = admissiveis.sort_values(
+        "score",
+        ascending=False
+    ).iloc[0]
+
+    PL4.append(musica)
+    D4 += musica["duration_min"]
+    P4 += musica["popularity"]
+    V4 += musica["valence"]
+
+    M = M[M["track_id"] != musica["track_id"]]
+
+
+# =========================
+# 5. Verificação final
+# =========================
+
+ids_usados = (
+    [m["track_id"] for m in PL1] +
+    [m["track_id"] for m in PL2] +
+    [m["track_id"] for m in PL3] +
+    [m["track_id"] for m in PL4]
+)
+sem_repetidas = len(ids_usados) == len(set(ids_usados))
+
+instrumental_PL1_valido = min([m["instrumentalness"] for m in PL1]) >= 0.66
+tempo_PL2_valido = min([m["tempo"] for m in PL2]) >= 120
+
+dance_PL2_valido = abs(DM2 - 0.5) <= 0.001
+
+solucao_admissivel = (
+    32 <= D1 <= 35 and
+    32 <= D2 <= 35 and
+    32 <= D3 <= 35 and
+    32 <= D4 <= 35 and
+    instrumental_PL1_valido and
+    tempo_PL2_valido and
+    A3 >= 15 and
+    L3 >= 4 and
+    V4 >= 7 and
+    0.45 <= DM2 <= 0.55
+)
+
+# =========================
+# Resultados finais
+# =========================
+
+print("\n===== RESULTADOS FINAIS =====\n")
+
+print("PL1 – Instrumental")
+print("Nº músicas:", len(PL1))
+print("Duração:", round(D1, 2), "min")
+print("Popularidade:", P1)
+for i, m in enumerate(PL1, 1):
+    print(f"  {i}. {m['track_name']} - {m['artists']}")
+print()
+
+print("PL2 – Dance")
+print("Nº músicas:", len(PL2))
+print("Duração:", round(D2, 2), "min")
+print("Popularidade:", P2)
+print("Danceability média (DM2):", round(DM2, 3))
+for i, m in enumerate(PL2, 1):
+    print(f"  {i}. {m['track_name']} - {m['artists']}")
+print()
+
+print("PL3 – Acústica / Live")
+print("Nº músicas:", len(PL3))
+print("Duração total:", round(D3, 2), "min")
+print("Popularidade:", P3)
+print("Minutos acústicos (A3):", round(A3, 2))
+print("Número de músicas live (L3):", L3)
+print("Requisito acústico:", "OK" if A3 >= 15 else "NÃO OK")
+print("Requisito live:", "OK" if L3 >= 4 else "NÃO OK")
+for i, m in enumerate(PL3, 1):
+    print(f"  {i}. {m['track_name']} - {m['artists']}")
+print()
+
+print("PL4 – Forte componente positiva")
+print("Nº músicas:", len(PL4))
+print("Duração total:", round(D4, 2), "min")
+print("Popularidade:", P4)
+print("Valence total (V4):", round(V4, 2))
+print("Requisito valence:", "OK" if V4 >= 7 else "NÃO OK")
+for i, m in enumerate(PL4, 1):
+    print(f"  {i}. {m['track_name']} - {m['artists']}")
+
+print("\n===== VERIFICAÇÃO FINAL =====")
+
+print("PL1 duração válida:", 32 <= D1 <= 35)
+print("PL1 instrumentalness válida:", instrumental_PL1_valido)
+
+print("PL2 duração válida:", 32 <= D2 <= 35)
+print("PL2 tempo válido:", tempo_PL2_valido)
+print("PL2 danceability média válida:", 0.45 <= DM2 <= 0.55)
+
+print("PL3 duração válida:", 32 <= D3 <= 35)
+print("PL3 requisito acústico válido:", A3 >= 15)
+print("PL3 requisito live válido:", L3 >= 4)
+
+print("PL4 duração válida:", 32 <= D4 <= 35)
+print("PL4 valence válida:", V4 >= 7)
+
+print("\n===== POPULARIDADE DAS PLAYLISTS =====")
+print("Popularidade PL1:", P1)
+print("Popularidade PL2:", P2)
+print("Popularidade PL3:", P3)
+print("Popularidade PL4:", P4)
+
+print("\n===== MÚSICA MAIS E MENOS POPULAR POR PLAYLIST =====")
+
+analisar_popularidade_playlist("PL1 – Instrumental", PL1)
+analisar_popularidade_playlist("PL2 – Dance", PL2)
+analisar_popularidade_playlist("PL3 – Acústica / Live", PL3)
+analisar_popularidade_playlist("PL4 – Forte componente positiva", PL4)
+
+print("\n===== POPULARIDADE TOTAL =====")
+print("Popularidade total da solução:", P_total)
+
+if solucao_admissivel:
+    print("\nA solução obtida é admissível.")
+else:
+    print("\nA solução obtida NÃO é admissível.")
+
+print("\nFIM DO PROGRAMA")
