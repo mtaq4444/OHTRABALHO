@@ -11,20 +11,122 @@ import pandas as pd
 df = pd.read_csv("dataset_playlist.csv")
 df.columns = df.columns.str.strip()
 
+
 if "Unnamed: 0" in df.columns:
     df = df.drop(columns=["Unnamed: 0"])
 
-# Remover músicas duplicadas pelo track_id
-df = df.drop_duplicates(subset="track_id").copy()
-
-# Converter duração para minutos
-df["duration_min"] = df["duration_ms"] / 60000
-
-print("Dataset carregado")
-print("Número de músicas únicas:", len(df))
 
 # ============================================================
-# 2. FUNÇÕES AUXILIARES
+# 2. ANÁLISE INICIAL DO DATASET
+# ============================================================
+# Remover músicas duplicadas pelo track_id
+df_unique = df.drop_duplicates(subset="track_id").copy()
+
+# Converter duração de milissegundos para minutos
+df_unique["duration_min"] = df_unique["duration_ms"] / 60000
+
+print("\n===== INFORMAÇÕES SOBRE O DATASET =====")
+print(f"Total de linhas com duplicados: {len(df)}")
+print(f"Músicas únicas por track_id: {len(df_unique)}")
+print(f"Número de duplicados removidos: {len(df) - len(df_unique)}")
+
+print("\nColunas do dataset:")
+print(df.columns.tolist())
+
+print("\nValores ausentes:")
+missing = df_unique.isnull().sum()
+print(missing[missing > 0])
+
+print("\n===== ESTATÍSTICAS DESCRITIVAS =====")
+cols = [
+    "popularity",
+    "duration_min",
+    "instrumentalness",
+    "danceability",
+    "tempo",
+    "acousticness",
+    "liveness",
+    "valence"
+]
+print(df_unique[cols].describe().round(3))
+
+
+print("\n===== PL1 — INSTRUMENTALNESS >= 0.66 =====")
+pl1_pool = df_unique[df_unique["instrumentalness"] >= 0.66]
+
+print("Número de músicas candidatas:", len(pl1_pool))
+print("Popularidade média:", round(pl1_pool["popularity"].mean(), 2))
+print("Duração média:", round(pl1_pool["duration_min"].mean(), 2), "min")
+print("Duração total disponível:", round(pl1_pool["duration_min"].sum(), 2), "min")
+
+
+print("\n===== PL2 — TEMPO >= 120 BPM E DANCEABILITY MÉDIA 0.5 =====")
+pl2_pool = df_unique[df_unique["tempo"] >= 120]
+
+print("Número de músicas candidatas:", len(pl2_pool))
+print("Danceability mínima:", round(pl2_pool["danceability"].min(), 3))
+print("Danceability média:", round(pl2_pool["danceability"].mean(), 3))
+print("Danceability máxima:", round(pl2_pool["danceability"].max(), 3))
+
+near_05 = pl2_pool[
+    (pl2_pool["danceability"] >= 0.45) &
+    (pl2_pool["danceability"] <= 0.55)
+]
+
+print("Músicas com danceability entre 0.45 e 0.55:", len(near_05))
+
+
+print("\n===== PL3 — GÉNERO ACÚSTICO E MÚSICAS LIVE =====")
+acoustic_pool = df_unique[df_unique["track_genre"] == "acoustic"]
+live_pool = df_unique[df_unique["liveness"] > 0.8]
+overlap = df_unique[
+    (df_unique["track_genre"] == "acoustic") &
+    (df_unique["liveness"] > 0.8)
+]
+
+print("Músicas do género acoustic:", len(acoustic_pool))
+print("Músicas live com liveness > 0.8:", len(live_pool))
+print("Músicas acoustic e live:", len(overlap))
+print("Duração total acoustic disponível:", round(acoustic_pool["duration_min"].sum(), 2), "min")
+print("Duração média acoustic:", round(acoustic_pool["duration_min"].mean(), 2), "min")
+
+if acoustic_pool["duration_min"].mean() > 0:
+    print(
+        "Nº aproximado de músicas acoustic necessário para 15 min:",
+        round(15 / acoustic_pool["duration_min"].mean())
+    )
+
+
+print("\n===== PL4 — VALENCE TOTAL >= 7.0 =====")
+print("Valence mínima:", round(df_unique["valence"].min(), 3))
+print("Valence média:", round(df_unique["valence"].mean(), 3))
+print("Valence máxima:", round(df_unique["valence"].max(), 3))
+print("Músicas com valence > 0.7:", len(df_unique[df_unique["valence"] > 0.7]))
+print("Músicas com valence > 0.8:", len(df_unique[df_unique["valence"] > 0.8]))
+
+print("Se a playlist tiver 9 músicas, precisa de valence média >=", round(7 / 9, 3))
+print("Se a playlist tiver 10 músicas, precisa de valence média >=", round(7 / 10, 3))
+
+
+print("\n===== VIABILIDADE DA DURAÇÃO DAS PLAYLISTS =====")
+duracao_media = df_unique["duration_min"].mean()
+
+print("Duração média das músicas:", round(duracao_media, 2), "min")
+print(
+    "Estimativa de músicas por playlist:",
+    round(32 / duracao_media),
+    "a",
+    round(35 / duracao_media),
+    "músicas"
+)
+
+
+print("\n===== GÉNEROS MAIS FREQUENTES =====")
+print(df_unique["track_genre"].value_counts().head(15))
+
+
+# ============================================================
+# 3. FUNÇÕES AUXILIARES
 # ============================================================
 
 def duracao_total(playlist):
@@ -73,21 +175,18 @@ def analisar_popularidade(nome, playlist):
 
 
 # ============================================================
-# 3. INICIALIZAÇÃO
+# Alínea b) Desenvolvimento de uma heurística construtiva  
 # ============================================================
-
-M = df.copy()
+# 1. INICIALIZAÇÃO
+M =  M = df_unique.copy()
 
 PL1, PL2, PL3, PL4 = [], [], [], []
 
 D1 = D2 = D3 = D4 = 0
 P1 = P2 = P3 = P4 = 0
 
-# 4. PLAYLISTS
-# ==================================
+# 2. PLAYLISTS
 # PL1 — INSTRUMENTALNESS >= 0.66
-# ==================================
-
 
 while D1 < 32:
     admissiveis = M[
@@ -106,9 +205,7 @@ while D1 < 32:
 
     M = M[M["track_id"] != musica["track_id"]]
 
-# ====================================================
 # PL2 – Dance  TEMPO >= 120 E MÉDIA DANCEABILITY ≈ 0.5
-# ====================================================
 
 SOMA_DANCE2 = 0
 DM2 = 0
@@ -139,9 +236,7 @@ while D2 < 32:
 
     M = M[M["track_id"] != musica["track_id"]]
 
-# ============================================================
 # PL3 – Acústica / Live PELO MENOS 15 MIN ACÚSTICO + 4 LIVE
-# ===========================================================
 
 A3 = 0
 L3 = 0
@@ -183,9 +278,9 @@ while D3 < 35 and (D3 < 32 or A3 < 15 or L3 < 4):
 
     M = M[M["track_id"] != musica["track_id"]]
 
-# ===================================================
+
 # PL4 – Forte componente positiva VALENCE TOTAL >= 7
-# ===================================================
+
 
 V4 = 0
 
@@ -212,10 +307,7 @@ while D4 < 35 and (D4 < 32 or V4 < 7):
 
     M = M[M["track_id"] != musica["track_id"]]
 
-
-# =========================
-# 5. Verificação final
-# =========================
+# 3. VERIFICAÇÃO FINAL
 
 ids_usados = (
     [m["track_id"] for m in PL1] +
@@ -243,9 +335,7 @@ solucao_admissivel = (
     0.45 <= DM2 <= 0.55
 )
 
-# =========================
-# Resultados finais
-# =========================
+# 4. Resultados finais
 
 print("\n===== RESULTADOS FINAIS =====\n")
 
@@ -311,12 +401,13 @@ print("Popularidade PL4:", P4)
 
 print("\n===== MÚSICA MAIS E MENOS POPULAR POR PLAYLIST =====")
 
-analisar_popularidade_playlist("PL1 – Instrumental", PL1)
-analisar_popularidade_playlist("PL2 – Dance", PL2)
-analisar_popularidade_playlist("PL3 – Acústica / Live", PL3)
-analisar_popularidade_playlist("PL4 – Forte componente positiva", PL4)
+analisar_popularidade("PL1 – Instrumental", PL1)
+analisar_popularidade("PL2 – Dance", PL2)
+analisar_popularidade("PL3 – Acústica / Live", PL3)
+analisar_popularidade("PL4 – Forte componente positiva", PL4)
 
 print("\n===== POPULARIDADE TOTAL =====")
+P_total = P1 + P2 + P3 + P4
 print("Popularidade total da solução:", P_total)
 
 if solucao_admissivel:
@@ -325,3 +416,74 @@ else:
     print("\nA solução obtida NÃO é admissível.")
 
 print("\nFIM DO PROGRAMA")
+
+
+# Alínea c) — Solução vizinha por swap entre PL1 e PL4
+
+import copy
+
+# Trabalhar com cópias para não alterar a solução original
+PL1_viz = PL1.copy()
+PL4_viz = PL4.copy()
+
+found = False
+
+for i, m1 in enumerate(PL1):
+    for j, m4 in enumerate(PL4):
+
+        # Testar o swap: m1 vai para PL4, m4 vai para PL1
+        PL1_teste = PL1.copy()
+        PL4_teste = PL4.copy()
+        PL1_teste[i] = m4
+        PL4_teste[j] = m1
+
+        # --- Verificar PL1 ---
+        D1_new = sum(m["duration_min"] for m in PL1_teste)
+        instr_ok = all(m["instrumentalness"] >= 0.66 for m in PL1_teste)
+        dur1_ok  = 32 <= D1_new <= 35
+
+        # --- Verificar PL4 ---
+        D4_new = sum(m["duration_min"] for m in PL4_teste)
+        V4_new = sum(m["valence"]      for m in PL4_teste)
+        dur4_ok     = 32 <= D4_new <= 35
+        valence_ok  = V4_new >= 7.0
+
+        if instr_ok and dur1_ok and dur4_ok and valence_ok:
+            PL1_viz = PL1_teste
+            PL4_viz = PL4_teste
+            musica_saiu_PL1 = m1
+            musica_saiu_PL4 = m4
+            found = True
+            break
+
+    if found:
+        break
+
+# --- Resultados ---
+if found:
+    print("=== SOLUÇÃO VIZINHA (swap PL1 ↔ PL4) ===")
+    print(f"\nMovimento: '{musica_saiu_PL1['track_name']}' (saiu de PL1) "
+          f"↔ '{musica_saiu_PL4['track_name']}' (saiu de PL4)")
+
+    print("\n--- PL1 após swap ---")
+    print(f"  Duração : {sum(m['duration_min'] for m in PL1_viz):.2f} min")
+    print(f"  Popularidade : {sum(m['popularity'] for m in PL1_viz)}")
+    print(f"  Min instrumentalness: {min(m['instrumentalness'] for m in PL1_viz):.3f}")
+
+    print("\n--- PL4 após swap ---")
+    print(f"  Duração  : {sum(m['duration_min'] for m in PL4_viz):.2f} min")
+    print(f"  Popularidade : {sum(m['popularity'] for m in PL4_viz)}")
+    print(f"  Valence total: {sum(m['valence'] for m in PL4_viz):.3f}")
+
+    P_original = P1 + P2 + P3 + P4
+    P_vizinha  = (sum(m['popularity'] for m in PL1_viz) + P2 + P3 +
+                  sum(m['popularity'] for m in PL4_viz))
+    print(f"\nPopularidade total original : {P_original}")
+    print(f"Popularidade total vizinha  : {P_vizinha}")
+    print(f"Variação: {P_vizinha - P_original:+d}")
+
+    # Movimento a registar na Lista Tabu (para d))
+    print(f"\nMovimento para Lista Tabu: "
+          f"({musica_saiu_PL1['track_id']}, {musica_saiu_PL4['track_id']})")
+else:
+    print("Nenhum swap admissível encontrado entre PL1 e PL4.")
