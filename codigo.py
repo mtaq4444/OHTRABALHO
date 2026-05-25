@@ -485,3 +485,382 @@ if found:
 
 else:
     print("Nenhuma solução vizinha admissível encontrada para PL4.")
+
+    
+# ============================================================
+# Alínea c) — Solução vizinha por substituição na PL4
+# ============================================================
+
+print("\n===== ALÍNEA C — SOLUÇÃO VIZINHA =====")
+
+# Música removida da PL4
+musica_removida = PL4[-1]
+
+# IDs já usados na solução original
+ids_usados = set(
+    [m["track_id"] for m in PL1] +
+    [m["track_id"] for m in PL2] +
+    [m["track_id"] for m in PL3] +
+    [m["track_id"] for m in PL4]
+)
+
+# Procurar músicas ainda não usadas
+candidatas = df_unique[
+    ~df_unique["track_id"].isin(ids_usados)
+].copy()
+
+found = False
+
+for _, musica_nova in candidatas.sort_values("popularity", ascending=False).iterrows():
+
+    PL4_viz = PL4.copy()
+    PL4_viz[-1] = musica_nova
+
+    D4_viz = sum(m["duration_min"] for m in PL4_viz)
+    V4_viz = sum(m["valence"] for m in PL4_viz)
+    P4_viz = sum(m["popularity"] for m in PL4_viz)
+
+    if 32 <= D4_viz <= 35 and V4_viz >= 7:
+        found = True
+        break
+
+if found:
+    print("Estrutura de vizinhança: substituição de uma música por outra música não usada.")
+    print("\nPlaylist alterada: PL4")
+
+    print("\nMúsica removida:")
+    print(musica_removida["track_name"], "-", musica_removida["artists"])
+    print("Duração:", round(musica_removida["duration_min"], 2))
+    print("Valence:", round(musica_removida["valence"], 3))
+    print("Popularidade:", musica_removida["popularity"])
+
+    print("\nMúsica adicionada:")
+    print(musica_nova["track_name"], "-", musica_nova["artists"])
+    print("Duração:", round(musica_nova["duration_min"], 2))
+    print("Valence:", round(musica_nova["valence"], 3))
+    print("Popularidade:", musica_nova["popularity"])
+
+    print("\nPL4 original:")
+    print("Duração:", round(D4, 2))
+    print("Valence:", round(V4, 2))
+    print("Popularidade:", P4)
+
+    print("\nPL4 vizinha:")
+    print("Duração:", round(D4_viz, 2))
+    print("Valence:", round(V4_viz, 2))
+    print("Popularidade:", P4_viz)
+
+    print("\nPopularidade total original:", P1 + P2 + P3 + P4)
+    print("Popularidade total vizinha:", P1 + P2 + P3 + P4_viz)
+
+else:
+    print("Nenhuma solução vizinha admissível encontrada para PL4.")
+
+# ============================================================
+# Alínea D) — Pesquisa Tabu
+# ============================================================
+
+print("\n===== ALÍNEA D — PESQUISA TABU =====")
+
+# ------------------------------------------------------------
+# Funções auxiliares para a Pesquisa Tabu
+# ------------------------------------------------------------
+
+def copiar_solucao(solucao):
+    """Cria uma cópia das playlists da solução."""
+    return {
+        "PL1": solucao["PL1"].copy(),
+        "PL2": solucao["PL2"].copy(),
+        "PL3": solucao["PL3"].copy(),
+        "PL4": solucao["PL4"].copy()
+    }
+
+
+def popularidade_solucao(solucao):
+    """Calcula a função objetivo: popularidade total das quatro playlists."""
+    return (
+        popularidade_total(solucao["PL1"]) +
+        popularidade_total(solucao["PL2"]) +
+        popularidade_total(solucao["PL3"]) +
+        popularidade_total(solucao["PL4"])
+    )
+
+
+def ids_solucao(solucao):
+    """Devolve o conjunto de track_id usados na solução."""
+    return set(
+        [m["track_id"] for m in solucao["PL1"]] +
+        [m["track_id"] for m in solucao["PL2"]] +
+        [m["track_id"] for m in solucao["PL3"]] +
+        [m["track_id"] for m in solucao["PL4"]]
+    )
+
+
+def verificar_playlist(nome_playlist, playlist):
+    """Verifica se uma playlist respeita as suas restrições específicas."""
+    D = duracao_total(playlist)
+
+    # Restrição comum: duração entre 32 e 35 minutos
+    if not (32 <= D <= 35):
+        return False
+
+    # PL1: músicas com instrumentalness >= 0.66
+    if nome_playlist == "PL1":
+        return min([m["instrumentalness"] for m in playlist]) >= 0.66
+
+    # PL2: tempo >= 120 BPM e danceability média entre 0.45 e 0.55
+    if nome_playlist == "PL2":
+        tempo_valido = min([m["tempo"] for m in playlist]) >= 120
+        dance_media = sum(m["danceability"] for m in playlist) / len(playlist)
+        return tempo_valido and (0.45 <= dance_media <= 0.55)
+
+    # PL3: pelo menos 15 min acústicos e pelo menos 4 músicas live
+    if nome_playlist == "PL3":
+        A3_temp = sum(m["duration_min"] for m in playlist if m["acousticness"] >= 0.5)
+        L3_temp = sum(1 for m in playlist if m["liveness"] >= 0.8)
+        return A3_temp >= 15 and L3_temp >= 4
+
+    # PL4: valence total >= 7
+    if nome_playlist == "PL4":
+        V4_temp = sum(m["valence"] for m in playlist)
+        return V4_temp >= 7
+
+    return False
+
+
+def solucao_admissivel_tabu(solucao):
+    """Verifica se a solução completa é admissível."""
+    ids = (
+        [m["track_id"] for m in solucao["PL1"]] +
+        [m["track_id"] for m in solucao["PL2"]] +
+        [m["track_id"] for m in solucao["PL3"]] +
+        [m["track_id"] for m in solucao["PL4"]]
+    )
+
+    sem_repetidas = len(ids) == len(set(ids))
+
+    return (
+        sem_repetidas and
+        verificar_playlist("PL1", solucao["PL1"]) and
+        verificar_playlist("PL2", solucao["PL2"]) and
+        verificar_playlist("PL3", solucao["PL3"]) and
+        verificar_playlist("PL4", solucao["PL4"])
+    )
+
+
+# ------------------------------------------------------------
+# Inicialização da Pesquisa Tabu
+# ------------------------------------------------------------
+
+# A solução inicial é a solução obtida pela heurística construtiva greedy
+solucao_atual = {
+    "PL1": PL1.copy(),
+    "PL2": PL2.copy(),
+    "PL3": PL3.copy(),
+    "PL4": PL4.copy()
+}
+
+# A melhor solução começa por ser a solução inicial
+melhor_solucao = copiar_solucao(solucao_atual)
+
+valor_atual = popularidade_solucao(solucao_atual)
+melhor_valor = valor_atual
+
+print("Popularidade da solução inicial:", valor_atual)
+
+# Dimensão da lista tabu
+# Cada movimento fica proibido temporariamente durante as últimas 5 atualizações
+dimensao_tabu = 5
+lista_tabu = []
+
+# Critérios de paragem
+max_iteracoes = 20          # limite máximo de iterações
+max_sem_melhoria = 5        # termina se não melhorar durante 5 iterações consecutivas
+sem_melhoria = 0
+
+playlists = ["PL1", "PL2", "PL3", "PL4"]
+
+# Lista onde será guardada a informação de cada iteração para exportar para CSV
+output_tabu = []
+
+
+# ------------------------------------------------------------
+# Ciclo principal da Pesquisa Tabu
+# ------------------------------------------------------------
+
+for iteracao in range(1, max_iteracoes + 1):
+
+    melhor_vizinha = None
+    melhor_valor_vizinha = -1
+    melhor_movimento = None
+
+    ids_atuais = ids_solucao(solucao_atual)
+
+    # Gerar soluções vizinhas por substituição de uma música
+    for nome_pl in playlists:
+
+        playlist_atual = solucao_atual[nome_pl]
+
+        for pos_remover, musica_removida in enumerate(playlist_atual):
+
+            # Músicas candidatas ainda não usadas na solução atual
+            candidatas = df_unique[
+                ~df_unique["track_id"].isin(ids_atuais)
+            ].copy()
+
+            # Para reduzir o tempo computacional, analisam-se apenas as 100 mais populares
+            candidatas = candidatas.sort_values("popularity", ascending=False).head(100)
+
+            for _, musica_nova in candidatas.iterrows():
+
+                # Movimento: playlist alterada, música removida e música adicionada
+                movimento = (
+                    nome_pl,
+                    musica_removida["track_id"],
+                    musica_nova["track_id"]
+                )
+
+                # Criar solução vizinha
+                solucao_vizinha = copiar_solucao(solucao_atual)
+                solucao_vizinha[nome_pl][pos_remover] = musica_nova
+
+                # Verificar se a solução vizinha continua admissível
+                if not solucao_admissivel_tabu(solucao_vizinha):
+                    continue
+
+                valor_vizinha = popularidade_solucao(solucao_vizinha)
+
+                # Verificar se o movimento está na lista tabu
+                movimento_tabu = movimento in lista_tabu
+
+                # Critério de aspiração:
+                # um movimento tabu pode ser aceite se melhorar a melhor solução global
+                if movimento_tabu and valor_vizinha <= melhor_valor:
+                    continue
+
+                # Escolher a melhor solução vizinha admissível
+                if valor_vizinha > melhor_valor_vizinha:
+                    melhor_vizinha = solucao_vizinha
+                    melhor_valor_vizinha = valor_vizinha
+                    melhor_movimento = movimento
+
+    # Se não existirem soluções vizinhas admissíveis, o algoritmo termina
+    if melhor_vizinha is None:
+        print("Não foram encontradas soluções vizinhas admissíveis.")
+        break
+
+    # Atualizar solução atual
+    solucao_atual = melhor_vizinha
+    valor_atual = melhor_valor_vizinha
+
+    # Atualizar lista tabu
+    lista_tabu.insert(0, melhor_movimento)
+
+    if len(lista_tabu) > dimensao_tabu:
+        lista_tabu.pop()
+
+    # Atualizar melhor solução global
+    if valor_atual > melhor_valor:
+        melhor_solucao = copiar_solucao(solucao_atual)
+        melhor_valor = valor_atual
+        sem_melhoria = 0
+        houve_melhoria = "Sim"
+    else:
+        sem_melhoria += 1
+        houve_melhoria = "Não"
+
+    print(f"\nIteração {iteracao}")
+    print("Movimento escolhido:", melhor_movimento)
+    print("Popularidade da solução atual:", valor_atual)
+    print("Melhor popularidade encontrada:", melhor_valor)
+    print("Houve melhoria global:", houve_melhoria)
+    print("Lista Tabu:", lista_tabu)
+
+    # Guardar informação da iteração para ficheiro output
+    output_tabu.append({
+        "iteracao": iteracao,
+        "playlist_alterada": melhor_movimento[0],
+        "track_id_removido": melhor_movimento[1],
+        "track_id_adicionado": melhor_movimento[2],
+        "movimento": str(melhor_movimento),
+        "popularidade_atual": valor_atual,
+        "melhor_popularidade": melhor_valor,
+        "houve_melhoria_global": houve_melhoria,
+        "lista_tabu": str(lista_tabu)
+    })
+
+    # Critério de paragem por estagnação
+    if sem_melhoria >= max_sem_melhoria:
+        print("\nCritério de paragem atingido: sem melhoria durante", max_sem_melhoria, "iterações consecutivas.")
+        break
+
+
+# ------------------------------------------------------------
+# Resultados finais da Pesquisa Tabu
+# ------------------------------------------------------------
+
+print("\n===== MELHOR SOLUÇÃO APÓS PESQUISA TABU =====")
+print("Popularidade inicial:", P_total)
+print("Melhor popularidade obtida:", melhor_valor)
+print("Melhoria obtida:", melhor_valor - P_total)
+
+for nome_pl in playlists:
+    playlist = melhor_solucao[nome_pl]
+
+    print("\n" + nome_pl)
+    print("Nº músicas:", len(playlist))
+    print("Duração:", round(duracao_total(playlist), 2), "min")
+    print("Popularidade:", popularidade_total(playlist))
+
+    for i, m in enumerate(playlist, 1):
+        print(
+            f"  {i}. {m['track_name']} - {m['artists']} "
+            f"| pop={m['popularity']} "
+            f"| dur={m['duration_min']:.2f}"
+        )
+
+print("\nSolução final admissível:", solucao_admissivel_tabu(melhor_solucao))
+
+
+# ------------------------------------------------------------
+# Exportar ficheiros de output da Pesquisa Tabu
+# ------------------------------------------------------------
+
+# 1) Ficheiro com a evolução da Pesquisa Tabu por iteração
+_df_output_tabu = pd.DataFrame(output_tabu)
+_df_output_tabu.to_csv(
+    "output_pesquisa_tabu.csv",
+    index=False,
+    encoding="utf-8-sig"
+)
+
+# 2) Ficheiro com a melhor solução final encontrada
+linhas_solucao_final = []
+
+for nome_pl in playlists:
+    for i, m in enumerate(melhor_solucao[nome_pl], 1):
+        linhas_solucao_final.append({
+            "playlist": nome_pl,
+            "ordem": i,
+            "track_id": m["track_id"],
+            "track_name": m["track_name"],
+            "artists": m["artists"],
+            "duration_min": m["duration_min"],
+            "popularity": m["popularity"],
+            "instrumentalness": m["instrumentalness"],
+            "danceability": m["danceability"],
+            "tempo": m["tempo"],
+            "acousticness": m["acousticness"],
+            "liveness": m["liveness"],
+            "valence": m["valence"]
+        })
+
+_df_solucao_final = pd.DataFrame(linhas_solucao_final)
+_df_solucao_final.to_csv(
+    "melhor_solucao_pesquisa_tabu.csv",
+    index=False,
+    encoding="utf-8-sig"
+)
+
+print("\nFicheiro de output criado: output_pesquisa_tabu.csv")
+print("Ficheiro com a melhor solução criado: melhor_solucao_pesquisa_tabu.csv")
